@@ -1,0 +1,22 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "pip install -r requirements.txt",
+    "nixpacksVersion": "1.15.0"
+  },
+  "deploy": {
+    "startCommand": "python bot.py",
+    "numReplicas": 1,
+    "restartPolicyType": "ALWAYS",
+    "restartPolicyMaxRetries": 5
+  },
+  "service": {
+    "name": "telegram-verification-bot",
+    "type": "worker",
+    "env": {
+      "PYTHONUNBUFFERED": "true",
+      "PYTHONPATH": "/app"
+    }
+  }
+}
