@@ -1,51 +1,45 @@
-# Используем официальный Python образ с Node.js
-FROM python:3.11-slim AS bot-builder
+# Окончательный рабочий Dockerfile
+FROM node:18-alpine AS web-builder
 
-# Устанавливаем Node.js для веб-сервера
-RUN apt-get update && apt-get install -y nodejs npm curl
-RUN npm install -g npm@latest
+# Устанавливаем Python для бота
+RUN apk add --no-cache python3 py3-pip bash
 
-# Создаем рабочую директорию
 WORKDIR /app
+
+# 1. Устанавливаем веб-сервер
+COPY web-server/package.json ./web-server/
+WORKDIR /app/web-server
+
+# Используем npm install вместо npm ci
+RUN npm install --omit=dev
+
+# Копируем остальные файлы веб-сервера
+COPY web-server/ ./
+
+# 2. Возвращаемся к корню и устанавливаем бота
+WORKDIR /app
+COPY bot/requirements.txt ./bot/
+
+WORKDIR /app/bot
+# Разрешаем установку пакетов в системный Python для Alpine
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Копируем файлы бота
-COPY bot/requirements.txt ./bot/
-COPY bot/*.py ./bot/
+COPY bot/ ./
 
-# Устанавливаем зависимости бота в виртуальном окружении
-WORKDIR /app/bot
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Копируем файлы веб-сервера
+# 3. Создаем скрипт запуска
 WORKDIR /app
-COPY web-server/package*.json ./web-server/
-COPY web-server/server.js ./web-server/
-COPY web-server/public ./web-server/public/
-
-# Устанавливаем зависимости веб-сервера
-WORKDIR /app/web-server
-RUN npm ci --only=production
-
-# Копируем остальные файлы
-WORKDIR /app
-COPY . .
-
-# Настраиваем окружение для бота
-WORKDIR /app/bot
-ENV PYTHONPATH="/app/bot"
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Создаем скрипт запуска
-RUN echo '#!/bin/bash\n\
+RUN echo '#!/bin/sh\n\
+echo "🚀 Starting Verification System..."\n\
+echo "🌐 Starting web server on port 3000..."\n\
 cd /app/web-server && npm start &\n\
-cd /app/bot && /opt/venv/bin/python bot.py\n\
-wait' > /app/start.sh && chmod +x /app/start.sh
+echo "🤖 Starting Telegram bot..."\n\
+cd /app/bot && python3 bot.py &\n\
+echo "✅ Both services started"\n\
+echo "📧 Web server: http://localhost:3000"\n\
+wait' > start.sh && chmod +x start.sh
 
-# Экспортируем порт
 EXPOSE 3000
 
-# Запускаем оба сервиса
-CMD ["/app/start.sh"]
+CMD ["/bin/sh", "/app/start.sh"]
