@@ -1,154 +1,94 @@
 #!/bin/bash
+# start.sh - Скрипт запуска всей системы
 
-# Скрипт запуска всей системы верификации
+echo "========================================"
+echo "   Human Verification System           "
+echo "========================================"
 
-set -e
+# Проверка Node.js
+if ! command -v node &> /dev/null; then
+    echo "❌ Node.js не установлен"
+    echo "Установите Node.js с сайта: https://nodejs.org/"
+    exit 1
+fi
 
-echo "🚀 Запуск системы верификации..."
+# Проверка npm
+if ! command -v npm &> /dev/null; then
+    echo "❌ npm не установлен"
+    echo "Установите npm вместе с Node.js"
+    exit 1
+fi
 
-# Цвета
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+# Проверка Python
+if ! command -v python3 &> /dev/null; then
+    echo "❌ Python3 не установлен"
+    echo "Установите Python 3.8+"
+    exit 1
+fi
 
-print_status() {
-    echo -e "${GREEN}[+]${NC} $1"
-}
+echo "✅ Проверка зависимостей пройдена"
+echo "📦 Node.js: $(node --version)"
+echo "🐍 Python: $(python3 --version)"
 
-print_error() {
-    echo -e "${RED}[!]${NC} $1"
-}
+# Создаем необходимые директории
+mkdir -p web-server/logs web-server/data bot/logs bot/database
 
-print_warning() {
-    echo -e "${YELLOW}[*]${NC} $1"
-}
+# 1. Запускаем веб-сервер
+echo ""
+echo "🌐 Запуск веб-сервера..."
+cd web-server
 
-# Проверка наличия директорий
-check_directories() {
-    if [ ! -d "bot" ]; then
-        print_error "Папка bot/ не найдена"
-        exit 1
-    fi
-    
-    if [ ! -d "web-server" ]; then
-        print_error "Папка web-server/ не найдена"
-        exit 1
-    fi
-    
-    print_status "Структура проекта проверена"
-}
+# Проверяем зависимости
+if [ ! -d "node_modules" ]; then
+    echo "📦 Устанавливаю зависимости Node.js..."
+    npm install --silent
+fi
 
-# Запуск веб-сервера
-start_web_server() {
-    print_status "Запуск веб-сервера..."
-    cd web-server
-    
-    # Проверка зависимостей
-    if [ ! -d "node_modules" ]; then
-        print_warning "Зависимости Node.js не установлены"
-        print_warning "Запускаю: npm install"
-        npm install
-    fi
-    
-    # Запуск сервера в фоне
-    npm start &
-    WEB_PID=$!
-    
-    cd ..
-    print_status "Веб-сервер запущен (PID: $WEB_PID)"
-}
+echo "🚀 Веб-сервер запускается на http://localhost:3000"
+npm start &
+WEB_PID=$!
+echo "📊 PID веб-сервера: $WEB_PID"
 
-# Запуск Telegram бота
-start_telegram_bot() {
-    print_status "Запуск Telegram бота..."
-    cd bot
-    
-    # Проверка виртуального окружения
-    if [ ! -d "venv" ]; then
-        print_error "Виртуальное окружение не найдено"
-        print_warning "Создайте: python -m venv venv"
-        exit 1
-    fi
-    
-    # Активация venv и запуск бота
-    source venv/bin/activate
-    
-    # Проверка зависимостей
-    if ! python -c "import telegram" &> /dev/null; then
-        print_warning "Зависимости Python не установлены"
-        print_warning "Запускаю: pip install -r requirements.txt"
-        pip install -r requirements.txt
-    fi
-    
-    # Запуск бота в фоне
-    python bot.py &
-    BOT_PID=$!
-    
-    cd ..
-    print_status "Telegram бот запущен (PID: $BOT_PID)"
-}
+# 2. Запускаем Telegram бота
+echo ""
+echo "🤖 Запуск Telegram бота..."
+cd ../bot
 
-# Проверка работы сервисов
-check_services() {
-    print_status "Проверка работы сервисов..."
-    
-    sleep 3
-    
-    # Проверка веб-сервера
-    if curl -s http://localhost:3000 > /dev/null; then
-        print_status "Веб-сервер работает: http://localhost:3000"
-    else
-        print_error "Веб-сервер не отвечает"
-    fi
-    
-    # Информация для пользователя
-    echo ""
-    print_status "✅ Система запущена!"
-    echo ""
-    print_warning "Веб-сервер: http://localhost:3000"
-    print_warning "Telegram бот: запущен"
-    print_warning "Логи:"
-    print_warning "  - Бот: tail -f bot/logs/verification_bot.log"
-    print_warning "  - Сервер: tail -f web-server/logs/server.log"
-    echo ""
-    print_warning "Для остановки нажмите Ctrl+C"
-}
+# Проверяем виртуальное окружение
+if [ ! -d "venv" ]; then
+    echo "🐍 Создаю виртуальное окружение Python..."
+    python3 -m venv venv
+fi
 
-# Обработка завершения
-cleanup() {
-    print_status "Остановка системы..."
-    
-    if [ ! -z "$WEB_PID" ]; then
-        kill $WEB_PID 2>/dev/null || true
-        print_status "Веб-сервер остановлен"
-    fi
-    
-    if [ ! -z "$BOT_PID" ]; then
-        kill $BOT_PID 2>/dev/null || true
-        print_status "Telegram бот остановлен"
-    fi
-    
-    exit 0
-}
+# Активируем venv
+source venv/bin/activate
 
-# Установка обработчика сигналов
-trap cleanup INT TERM
+# Устанавливаем зависимости если нужно
+if [ ! -f "venv/.deps_installed" ]; then
+    echo "📦 Устанавливаю зависимости Python..."
+    pip install -r requirements.txt --quiet
+    touch venv/.deps_installed
+fi
 
-# Основной процесс
-main() {
-    echo "========================================"
-    echo "   Human Verification System           "
-    echo "========================================"
-    
-    check_directories
-    start_web_server
-    start_telegram_bot
-    check_services
-    
-    # Ожидание завершения
-    wait
-}
+echo "🤖 Бот запускается..."
+python bot.py &
+BOT_PID=$!
+echo "📊 PID бота: $BOT_PID"
 
-# Запуск
-main
+echo ""
+echo "========================================"
+echo "✅ СИСТЕМА ЗАПУЩЕНА!"
+echo "🌐 Веб-сервер: http://localhost:3000"
+echo "🤖 Telegram бот: запущен"
+echo ""
+echo "📋 Команды для управления:"
+echo "   CTRL+C - Остановить все сервисы"
+echo "   kill $WEB_PID - Остановить веб-сервер"
+echo "   kill $BOT_PID - Остановить бота"
+echo "========================================"
+
+# Ожидаем завершения
+wait $WEB_PID $BOT_PID
+
+echo ""
+echo "🛑 Система остановлена"
