@@ -1,9 +1,9 @@
 [build]
 builder = "nixpacks"
-buildCommand = "cd web-server && npm install && cd ../bot && pip install -r requirements.txt"
+buildCommand = "echo 'Using Nixpacks auto-detection'"
 
 [deploy]
-startCommand = "cd web-server && npm start"
+startCommand = "node web-server/server.js"
 
 [environment]
 PORT = "3000"
@@ -11,8 +11,16 @@ NODE_ENV = "production"
 
 # MySQL Database
 DATABASE_URL = "mysql://root:QWGJtSPaTMCjODrfySWkTyHyxHzYwEDM@gondola.proxy.rlwy.net:15465/railway"
+DB_HOST = "gondola.proxy.rlwy.net"
+DB_PORT = "15465"
+DB_NAME = "railway"
+DB_USER = "root"
+DB_PASSWORD = "QWGJtSPaTMCjODrfySWkTyHyxHzYwEDM"
 
 # Telegram Bot
 BOT_TOKEN = "7725874473:AAEEZj4LtuhjcL0lqN9nATOcihJr2uqyhi0"
 CREATOR_CHAT_ID = "990561525"
 API_SECRET = "secure_verification_system_arkadiy1803_2025"
+
+# CORS
+CORS_ORIGIN = "https://arkadiy1803.github.io"
